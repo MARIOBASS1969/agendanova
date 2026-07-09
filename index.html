@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agendas e Tarefas</title>
+
+<style>
+:root{
+    --primaria:#2563eb;
+    --alerta:#dc2626;
+    --hoje:#facc15;
+    --bg:#f3f4f6;
+    --card:#ffffff;
+    --texto:#1f2937;
+    --cinza:#6b7280;
+}
+
+*{box-sizing:border-box}
+
+body{
+    font-family:Segoe UI, Arial, sans-serif;
+    background:var(--bg);
+    display:flex;
+    justify-content:center;
+    padding:14px;
+}
+
+.container{
+    background:var(--card);
+    width:100%;
+    max-width:560px;
+    padding:18px;
+    border-radius:14px;
+    box-shadow:0 10px 25px rgba(0,0,0,.08);
+}
+
+h2{
+    text-align:center;
+    color:var(--primaria);
+    margin-bottom:14px;
+}
+
+label{
+    font-weight:600;
+    font-size:14px;
+    margin-top:10px;
+    display:block;
+}
+
+input,button{
+    width:100%;
+    padding:10px;
+    margin-top:6px;
+    border-radius:8px;
+    font-size:14px;
+}
+
+input{
+    border:1px solid #d1d5db;
+}
+
+button{
+    border:none;
+    font-weight:600;
+    cursor:pointer;
+}
+
+.opcoes{
+    display:flex;
+    gap:10px;
+    margin-top:10px;
+}
+
+.opcoes input{
+    flex:1;
+    padding:10px;
+    font-size:14px;
+}
+
+.btn-som{
+    width:120px;
+    padding:10px;
+    font-size:13px;
+    border-radius:8px;
+    background:#22c55e;
+    color:#fff;
+}
+
+.btn-som.off{
+    background:#9ca3af;
+}
+
+.btn-add{
+    background:var(--primaria);
+    color:#fff;
+    margin-top:14px;
+}
+
+.btn-toggle{
+    background:#0ea5e9;
+    color:#fff;
+    margin-top:10px;
+}
+
+ul{
+    list-style:none;
+    padding:0;
+    margin-top:20px;
+}
+
+li{
+    position:relative;
+    background:#f9fafb;
+    border:1px solid #e5e7eb;
+    border-left:6px solid var(--primaria);
+    padding:14px;
+    margin-bottom:12px;
+    border-radius:14px;
+}
+
+li.hoje{
+    border-left-color:var(--hoje);
+    background:#fffbeb;
+}
+
+li.alerta{
+    border-left-color:var(--alerta);
+    background:#fef2f2;
+}
+
+.data{
+    font-size:13px;
+    color:var(--cinza);
+}
+
+.tempo{
+    font-weight:700;
+    margin-top:6px;
+}
+
+.valor{
+    margin-top:6px;
+    font-weight:600;
+}
+
+.remover{
+    position:absolute;
+    top:8px;
+    right:8px;
+    width:30px;
+    height:30px;
+    border-radius:50%;
+    border:none;
+    background:#fee2e2;
+    color:var(--alerta);
+    font-size:16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.total{
+    margin-top:18px;
+    font-size:17px;
+    font-weight:700;
+    text-align:right;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h2>Agendas e Tarefas</h2>
+
+<label>Descrição</label>
+<input id="descricao" placeholder="Aniver, Evento, exames">
+
+<label>Data</label>
+<input type="date" id="data">
+
+<label>Valor (R$)</label>
+<input type="number" id="valor" step="0.01">
+
+<div class="opcoes">
+<input type="number" id="diasAlerta" placeholder="Avisar X dias">
+<button class="btn-som" id="btnSom" onclick="toggleSom()">🔔 Som ON</button>
+</div>
+
+<button class="btn-add" onclick="adicionar()">Adicionar tarefa</button>
+<button class="btn-toggle" onclick="toggleFiltro()">Mostrar todas</button>
+
+<ul id="lista"></ul>
+
+<div class="total">Total: R$ <span id="total">0,00</span></div>
+</div>
+
+<script>
+let registros = JSON.parse(localStorage.getItem("registrosTempo")) || [];
+let somAtivo = JSON.parse(localStorage.getItem("somAtivo"));
+if(somAtivo === null) somAtivo = true;
+
+let mostrarTodas = false;
+
+const lista = document.getElementById("lista");
+const totalSpan = document.getElementById("total");
+const btnSom = document.getElementById("btnSom");
+
+const descricaoInput = document.getElementById("descricao");
+const dataInput = document.getElementById("data");
+const valorInput = document.getElementById("valor");
+const diasAlertaInput = document.getElementById("diasAlerta");
+
+function salvar(){
+    localStorage.setItem("registrosTempo", JSON.stringify(registros));
+    localStorage.setItem("somAtivo", JSON.stringify(somAtivo));
+}
+
+function diferencaDias(data){
+    const hoje = new Date();
+    const alvo = new Date(data + "T00:00:00");
+    return Math.trunc((alvo - hoje) / 86400000);
+}
+
+function calcularPeriodo(data){
+    let inicio = new Date();
+    let fim = new Date(data + "T00:00:00");
+    let passado = false;
+
+    if(inicio > fim){
+        [inicio, fim] = [fim, inicio];
+        passado = true;
+    }
+
+    let anos = fim.getFullYear() - inicio.getFullYear();
+    let meses = fim.getMonth() - inicio.getMonth();
+    let dias = fim.getDate() - inicio.getDate();
+
+    if(dias < 0){
+        meses--;
+        dias += new Date(fim.getFullYear(), fim.getMonth(), 0).getDate();
+    }
+    if(meses < 0){
+        anos--;
+        meses += 12;
+    }
+    return {anos, meses, dias, passado};
+}
+
+function textoPeriodo(data){
+    const diff = Math.abs(new Date(data + "T00:00:00") - new Date());
+    if(diff < 86400000) return "É hoje";
+
+    const {anos, meses, dias, passado} = calcularPeriodo(data);
+    const partes = [];
+    if(anos) partes.push(`${anos} ano${anos>1?"s":""}`);
+    if(meses) partes.push(`${meses} mês${meses>1?"es":""}`);
+    if(dias) partes.push(`${dias} dia${dias>1?"s":""}`);
+
+    const texto = partes.join(", ").replace(/,([^,]*)$/, " e$1");
+    return passado ? `Passaram ${texto}` : `Faltam ${texto}`;
+}
+
+function formatarData(data){
+    return new Date(data + "T00:00:00").toLocaleDateString("pt-BR");
+}
+
+function toggleSom(){
+    somAtivo = !somAtivo;
+    btnSom.textContent = somAtivo ? "🔔 Som ON" : "🔕 Som OFF";
+    btnSom.classList.toggle("off", !somAtivo);
+    salvar();
+}
+
+// function adicionar(){
+//     const descricao = descricaoInput.value.trim();
+//     const data = dataInput.value;
+//     const valor = Number(valorInput.value) || 0;
+//     const diasAlerta = Number(diasAlertaInput.value) || 3;
+
+//     if(!descricao || !data){
+//         alert("Preencha os campos obrigatórios");
+//         return;
+//     }
+
+//     registros.push({descricao, data, valor, diasAlerta});
+//     salvar();
+//     renderizar();
+
+//     descricaoInput.value="";
+//     dataInput.value="";
+//     valorInput.value="";
+//     diasAlertaInput.value="";
+// }
+
+function adicionar(){
+    const descricao = descricaoInput.value.trim();
+    const data = dataInput.value;
+    const valor = Number(valorInput.value) || 0;
+    const diasAlerta = Number(diasAlertaInput.value) || 3;
+
+    if(!descricao || !data){
+        alert("Preencha os campos obrigatórios");
+        return;
+    }
+
+    // Adiciona sempre no início da lista
+    registros.unshift({descricao, data, valor, diasAlerta});
+
+    salvar();
+    renderizar();
+
+    descricaoInput.value="";
+    dataInput.value="";
+    valorInput.value="";
+    diasAlertaInput.value="";
+}
+
+function remover(i){
+    registros.splice(i,1);
+    salvar();
+    renderizar();
+}
+
+function toggleFiltro(){
+    mostrarTodas = !mostrarTodas;
+    event.target.textContent = mostrarTodas ? "Ocultar extras" : "Mostrar todas";
+    renderizar();
+}
+
+function renderizar(){
+    lista.innerHTML="";
+    let total = 0;
+
+    registros.forEach((r,i)=>{
+        const dias = diferencaDias(r.data);
+        if(!mostrarTodas && !(dias===0 || dias===3)) return;
+
+        total += r.valor;
+
+        const valorHTML = r.valor > 0
+            ? `<div class="valor">R$ ${r.valor.toFixed(2)}</div>`
+            : "";
+
+        const li = document.createElement("li");
+        if(dias===0) li.classList.add("hoje");
+        if(dias===3) li.classList.add("alerta");
+
+        li.innerHTML = `
+        <button class="remover" onclick="remover(${i})">✕</button>
+        <strong>${r.descricao}</strong><br>
+        <span class="data">${formatarData(r.data)}</span>
+        <div class="tempo">${textoPeriodo(r.data)}</div>
+        ${valorHTML}
+        `;
+        lista.appendChild(li);
+    });
+
+    totalSpan.textContent = total.toFixed(2);
+}
+
+toggleSom();
+renderizar();
+setInterval(renderizar,60000);
+</script>
+</body>
+</html>l>
